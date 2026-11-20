@@ -24,6 +24,9 @@ pub(all) enum InputCode {
   TimeReversed
   TableLimit
   RowLimit
+  AnchorsMissing
+  AnchorOrder
+  SegmentTooLong
 } derive(Eq, @debug.Debug)
 
 ///|
@@ -43,6 +46,9 @@ pub fn InputCode::tag(self : InputCode) -> String {
     TimeReversed => "TIME_REVERSED"
     TableLimit => "TABLE_LIMIT"
     RowLimit => "ROW_LIMIT"
+    AnchorsMissing => "ANCHORS_MISSING"
+    AnchorOrder => "ANCHOR_ORDER"
+    SegmentTooLong => "SEGMENT_TOO_LONG"
   }
 }
 
