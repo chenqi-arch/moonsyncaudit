@@ -1,0 +1,7 @@
+import {
+  "chenqi-arch/moonsyncaudit" @sync,
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "js"
