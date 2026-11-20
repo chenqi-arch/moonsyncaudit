@@ -1,0 +1,8 @@
+_build/
+.mooncakes/
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+private/
+*_项目申报书*.md
