@@ -27,6 +27,10 @@ pub(all) enum InputCode {
   AnchorsMissing
   AnchorOrder
   SegmentTooLong
+  NegativeTolerance
+  CheckpointsMissing
+  CheckpointOrder
+  CheckpointOnAnchor
 } derive(Eq, @debug.Debug)
 
 ///|
@@ -49,6 +53,10 @@ pub fn InputCode::tag(self : InputCode) -> String {
     AnchorsMissing => "ANCHORS_MISSING"
     AnchorOrder => "ANCHOR_ORDER"
     SegmentTooLong => "SEGMENT_TOO_LONG"
+    NegativeTolerance => "NEGATIVE_TOLERANCE"
+    CheckpointsMissing => "CHECKPOINTS_MISSING"
+    CheckpointOrder => "CHECKPOINT_ORDER"
+    CheckpointOnAnchor => "CHECKPOINT_ON_ANCHOR"
   }
 }
 
