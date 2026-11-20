@@ -31,6 +31,7 @@ pub(all) enum InputCode {
   CheckpointsMissing
   CheckpointOrder
   CheckpointOnAnchor
+  NoRecords
 } derive(Eq, @debug.Debug)
 
 ///|
@@ -57,6 +58,7 @@ pub fn InputCode::tag(self : InputCode) -> String {
     CheckpointsMissing => "CHECKPOINTS_MISSING"
     CheckpointOrder => "CHECKPOINT_ORDER"
     CheckpointOnAnchor => "CHECKPOINT_ON_ANCHOR"
+    NoRecords => "NO_RECORDS"
   }
 }
 

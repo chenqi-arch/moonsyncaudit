@@ -3,19 +3,39 @@
 /// timestamps must be nondecreasing. Equal timestamps retain their row order.
 pub fn parse_records(text : String) -> Array[Record] raise InputError {
   let records : Array[Record] = []
-  let seen : Map[String, Unit] = Map([])
-  let mut previous_ms = 0L
   read_tsv(text, "id\tt_ms", MAX_RECORDS, (id, time, line) => {
     let id = id.to_owned()
-    guard valid_record_id(id) else { raise InvalidInput(BadId, line) }
-    guard !seen.contains(id) else { raise InvalidInput(DuplicateId, line) }
     let time_ms = parse_timestamp_ms(time, line~)
-    guard time_ms >= previous_ms else { raise InvalidInput(TimeReversed, line) }
     records.push({ id, time_ms, line, })
-    seen[id] = ()
-    previous_ms = time_ms
   })
+  validate_records(records[:])
   records
+}
+
+///|
+fn validate_records(records : ArrayView[Record]) -> Unit raise InputError {
+  guard records.length() <= MAX_RECORDS else { raise InvalidInput(RowLimit, 0) }
+  let seen : Map[String, Unit] = Map([])
+  let mut previous_line = 1
+  let mut previous_ms = 0L
+  for record in records {
+    guard record.line > previous_line else {
+      raise InvalidInput(BadRow, record.line)
+    }
+    guard record.time_ms >= 0L else { raise InvalidInput(BadTime, record.line) }
+    guard record.time_ms >= previous_ms else {
+      raise InvalidInput(TimeReversed, record.line)
+    }
+    guard valid_record_id(record.id) else {
+      raise InvalidInput(BadId, record.line)
+    }
+    guard !seen.contains(record.id) else {
+      raise InvalidInput(DuplicateId, record.line)
+    }
+    seen[record.id] = ()
+    previous_line = record.line
+    previous_ms = record.time_ms
+  }
 }
 
 ///|
