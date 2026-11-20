@@ -1,0 +1,5 @@
+import {
+  "chenqi-arch/moonsyncaudit" @sync,
+}
+
+pkgtype(kind: "executable")

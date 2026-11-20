@@ -1,0 +1,56 @@
+name: MoonSyncAudit CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moonsyncaudit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install MoonBit toolchain
+        shell: bash
+        env:
+          MOONBIT_INSTALL_VERSION: '0.10.14+7d59c7ec9'
+        run: |
+          set -euo pipefail
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Verify minimum compiler and Node versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          versions=$(moon version --all)
+          printf '%s\n' "$versions"
+          compiler=$(printf '%s\n' "$versions" | sed -n 's/^moonc v\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p')
+          test -n "$compiler"
+          test "$(printf '%s\n' 0.10.14 "$compiler" | sort -V | head -1)" = 0.10.14
+          node --version
+      - name: Format
+        run: moon fmt --check
+      - name: Check, build and test WebAssembly
+        run: |
+          moon check --target wasm --deny-warn
+          moon build --target wasm --deny-warn
+          moon test --target wasm --deny-warn
+          moon run --target wasm --deny-warn cmd/library-example
+      - name: Check, build and test JavaScript
+        run: |
+          moon check --target js --deny-warn
+          moon build --target js --deny-warn
+          moon test --target js --deny-warn
+      - name: Run the three CLI acceptance scenarios and failure cases
+        run: node scripts/verify-cli.mjs
