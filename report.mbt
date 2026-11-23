@@ -9,12 +9,12 @@ fn AuditReport::status(self : AuditReport) -> String {
 
 ///|
 fn AuditReport::checkpoint_status(self : AuditReport) -> String {
-  if self.checks.is_empty() {
-    "NOT_PROVIDED"
-  } else if self.checks.all(check => check.status == WithinTolerance) {
-    "PASS"
-  } else {
+  if !self.checkpoints_passed() {
     "REVIEW"
+  } else if self.checks.is_empty() {
+    "NOT_PROVIDED"
+  } else {
+    "PASS"
   }
 }
 
@@ -55,6 +55,12 @@ pub fn AuditReport::to_json(self : AuditReport) -> Json {
     "code": Json::string(check.status.tag()),
     "residual_ms": optional_delta(check.residual_ms),
   })
+  let segments : Array[Json] = self.segments.map(segment => {
+    "start_anchor_line": @json.to_json(segment.start_anchor_line),
+    "end_anchor_line": @json.to_json(segment.end_anchor_line),
+    "checkpoint_count": @json.to_json(segment.checkpoint_count),
+    "max_abs_residual_ms": optional_delta(segment.max_abs_residual_ms),
+  })
   {
     "schema": "moonsyncaudit.audit.v1",
     "status": Json::string(self.status()),
@@ -69,6 +75,8 @@ pub fn AuditReport::to_json(self : AuditReport) -> Json {
     "checkpoints": {
       "status": Json::string(self.checkpoint_status()),
       "rows": Json::array(checkpoint_rows),
+      "strict": @json.to_json(self.strict),
+      "segments": Json::array(segments),
     },
   }
 }
@@ -78,7 +86,7 @@ pub fn AuditReport::to_json(self : AuditReport) -> Json {
 pub fn AuditReport::to_text(self : AuditReport) -> String {
   let out = StringBuilder()
   out.write_string(
-    "status=\{self.status()} device=\{self.device_count} reference=\{self.reference_count} pairs=\{self.pairs.length()} issues=\{self.issues.length()} checkpoints=\{self.checkpoint_status()}",
+    "status=\{self.status()} device=\{self.device_count} reference=\{self.reference_count} pairs=\{self.pairs.length()} issues=\{self.issues.length()} checkpoints=\{self.checkpoint_status()} strict=\{self.strict}",
   )
   for pair in self.pairs {
     out.write_string(
@@ -103,6 +111,28 @@ pub fn AuditReport::to_text(self : AuditReport) -> String {
     if check.residual_ms is Some(delta) {
       out.write_string(" residual_ms=\{delta}")
     }
+  }
+  for segment in self.segments {
+    out.write_string(
+      "\nSEGMENT start_anchor_line=\{segment.start_anchor_line} end_anchor_line=\{segment.end_anchor_line} checkpoint_count=\{segment.checkpoint_count}",
+    )
+    if segment.max_abs_residual_ms is Some(maximum) {
+      out.write_string(" max_abs_residual_ms=\{maximum}")
+    }
+  }
+  out.to_string()
+}
+
+///|
+/// Export the original table line numbers and signed reference-minus-device
+/// difference. The header is also present when no rows were paired.
+pub fn AuditReport::to_pairs_tsv(self : AuditReport) -> String {
+  let out = StringBuilder()
+  out.write_string("device_line\treference_line\tdelta_ms")
+  for pair in self.pairs {
+    out.write_string(
+      "\n\{pair.device_line}\t\{pair.reference_line}\t\{pair.delta_ms}",
+    )
   }
   out.to_string()
 }

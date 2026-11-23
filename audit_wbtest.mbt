@@ -79,3 +79,112 @@ test "empty logs cannot silently pass and a single empty side reports missing ro
   assert_eq(result.issues()[0].line, 2)
   assert_eq(result.issues()[0].kind.tag(), "NO_CANDIDATE")
 }
+
+///|
+test "strict audit requires a measured checkpoint in every interval" {
+  let clock = ClockModel::new(
+    parse_clock_points(
+      "device_ms\treference_ms\n0\t0\n100\t100\n200\t200\n300\t300",
+    )[:],
+  )
+  let rows = parse_records("id\tt_ms\na\t50\nb\t150\nc\t250")
+  let partial = parse_clock_points("device_ms\treference_ms\n50\t50\n250\t251")
+  let regular = audit(
+    clock,
+    rows[:],
+    rows[:],
+    tolerance_ms=0L,
+    checkpoints=partial[:],
+  )
+  assert_true(regular.passed())
+  let strict = audit(
+    clock,
+    rows[:],
+    rows[:],
+    tolerance_ms=0L,
+    checkpoints=partial[:],
+    checkpoint_tolerance_ms=1L,
+    strict=true,
+  )
+  assert_true(!strict.passed())
+  assert_eq(strict.pairs().length(), 3)
+  assert_eq(strict.issues().length(), 0)
+  assert_eq(
+    strict
+    .segments()
+    .map(segment => {
+      (
+        segment.start_anchor_line,
+        segment.end_anchor_line,
+        segment.checkpoint_count,
+        segment.max_abs_residual_ms,
+      )
+    }),
+    [(2, 3, 1, Some(0L)), (3, 4, 0, None), (4, 5, 1, Some(1L))],
+  )
+  strict.segments().clear()
+  assert_eq(strict.segments().length(), 3)
+  let complete = parse_clock_points(
+    "device_ms\treference_ms\n50\t50\n150\t149\n250\t251",
+  )
+  let pass = audit(
+    clock,
+    rows[:],
+    rows[:],
+    tolerance_ms=0L,
+    checkpoints=complete[:],
+    checkpoint_tolerance_ms=1L,
+    strict=true,
+  )
+  assert_true(pass.passed())
+}
+
+///|
+test "no points and out-of-range observations never provide strict coverage" {
+  let clock = ClockModel::new(
+    parse_clock_points("device_ms\treference_ms\n100\t100\n200\t200")[:],
+  )
+  let rows = parse_records("id\tt_ms\nx\t150")
+  let absent = audit(clock, rows[:], rows[:], tolerance_ms=0L, strict=true)
+  assert_true(!absent.passed())
+  assert_eq(absent.pairs().length(), 1)
+  assert_eq(absent.segments()[0].max_abs_residual_ms, None)
+  let outside = parse_clock_points("device_ms\treference_ms\n90\t101\n190\t201")
+  let report = audit(
+    clock,
+    rows[:],
+    rows[:],
+    tolerance_ms=0L,
+    checkpoints=outside[:],
+    strict=true,
+  )
+  assert_true(!report.passed())
+  assert_eq(report.segments()[0].checkpoint_count, 0)
+  assert_eq(report.segments()[0].max_abs_residual_ms, None)
+  assert_true(report.checks().all(row => row.status == OutsideAnchors))
+}
+
+///|
+test "strict audit reports the worst absolute residual even when all rows pair" {
+  let clock = ClockModel::new(
+    parse_clock_points("device_ms\treference_ms\n0\t0\n100\t100")[:],
+  )
+  let rows = parse_records("id\tt_ms\nx\t50")
+  let points = parse_clock_points(
+    "device_ms\treference_ms\n20\t14\n40\t44\n70\t70",
+  )
+  let report = audit(
+    clock,
+    rows[:],
+    rows[:],
+    tolerance_ms=0L,
+    checkpoints=points[:],
+    checkpoint_tolerance_ms=5L,
+    strict=true,
+  )
+  assert_true(!report.passed())
+  assert_eq(report.pairs().length(), 1)
+  assert_eq(report.checks()[0].residual_ms, Some(-6L))
+  assert_eq(report.segments()[0].checkpoint_count, 3)
+  assert_eq(report.segments()[0].max_abs_residual_ms, Some(6L))
+}

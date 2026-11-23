@@ -51,12 +51,19 @@ pub struct AuditReport {
   priv pairs : Array[MatchedRows]
   priv issues : Array[RowIssue]
   priv checks : Array[CheckpointResult]
+  priv segments : Array[SegmentCheck]
+  priv strict : Bool
+}
+
+///|
+fn AuditReport::checkpoints_passed(self : AuditReport) -> Bool {
+  self.checks.all(check => check.status == WithinTolerance) &&
+  (!self.strict || self.segments.all(segment => segment.checkpoint_count > 0))
 }
 
 ///|
 pub fn AuditReport::passed(self : AuditReport) -> Bool {
-  self.issues.is_empty() &&
-  self.checks.all(check => check.status == WithinTolerance)
+  self.issues.is_empty() && self.checkpoints_passed()
 }
 
 ///|
@@ -82,6 +89,12 @@ pub fn AuditReport::issues(self : AuditReport) -> Array[RowIssue] {
 ///|
 pub fn AuditReport::checks(self : AuditReport) -> Array[CheckpointResult] {
   self.checks.copy()
+}
+
+///|
+/// Coverage and maximum observed absolute error for each anchor interval.
+pub fn AuditReport::segments(self : AuditReport) -> Array[SegmentCheck] {
+  self.segments.copy()
 }
 
 ///|
@@ -152,7 +165,8 @@ fn finish_issues(
 ///|
 /// Audit two sides and report each source row exactly once as paired or
 /// requiring review. Check point failures leave row findings visible and
-/// block the pass verdict.
+/// block the pass verdict. Strict mode also requires a measured independent
+/// checkpoint in every anchor interval.
 pub fn audit(
   clock : ClockModel,
   device : ArrayView[Record],
@@ -160,6 +174,7 @@ pub fn audit(
   tolerance_ms~ : Int64,
   checkpoints? : ArrayView[ClockPoint],
   checkpoint_tolerance_ms? : Int64 = 5L,
+  strict? : Bool = false,
 ) -> AuditReport raise InputError {
   guard tolerance_ms >= 0L && checkpoint_tolerance_ms >= 0L else {
     raise InvalidInput(NegativeTolerance, 0)
@@ -169,10 +184,10 @@ pub fn audit(
   }
   validate_records(device)
   validate_records(reference)
-  let checks = match checkpoints {
+  let evaluation = match checkpoints {
     Some(points) =>
-      clock.check_points(points, tolerance_ms=checkpoint_tolerance_ms)
-    None => []
+      clock.evaluate_points(points, tolerance_ms=checkpoint_tolerance_ms)
+    None => { rows: [], segments: clock.unchecked_segments(), }
   }
   let a = covered_rows(device, Device, t => clock.project(t))
   let b = covered_rows(reference, Reference, t => {
@@ -195,6 +210,8 @@ pub fn audit(
     reference_count: reference.length(),
     pairs,
     issues: a.issues + b.issues,
-    checks,
+    checks: evaluation.rows,
+    segments: evaluation.segments,
+    strict,
   }
 }
