@@ -64,7 +64,6 @@ fn ClockModel::evaluate_points(
   tolerance_ms~ : Int64,
 ) -> CheckpointEvaluation raise InputError {
   guard tolerance_ms >= 0L else { raise InvalidInput(NegativeTolerance, 0) }
-  guard points.length() > 0 else { raise InvalidInput(CheckpointsMissing, 0) }
   guard points.length() <= MAX_CLOCK_POINTS else {
     raise InvalidInput(RowLimit, 0)
   }
@@ -128,7 +127,8 @@ fn ClockModel::evaluate_points(
 
 ///|
 /// Extra observations check the model without becoming calibration anchors.
-/// The signed residual is observed reference time minus projected time.
+/// The signed residual is observed reference time minus projected time. With
+/// no observations, the returned result array is empty.
 pub fn ClockModel::check_points(
   self : ClockModel,
   points : ArrayView[ClockPoint],

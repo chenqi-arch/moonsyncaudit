@@ -190,6 +190,19 @@ try {
     args("inspection", 5, { strict: true }), 1);
   assert.deepEqual(noPoints.pairs, inspection.pairs);
   assert.ok(noPoints.checkpoints.segments.every(segment => segment.checkpoint_count === 0));
+  const emptyPoints = fixture("empty-checkpoint-table.tsv", "device_ms\treference_ms\n");
+  const strictEmpty = jsonReport("strict header-only table needs review with pairs intact",
+    [...args("inspection", 5, { strict: true }), "--checkpoints", emptyPoints], 1);
+  assert.deepEqual(strictEmpty, noPoints);
+  const optionalEmpty = jsonReport("regular header-only table leaves coverage unverified",
+    [...args("inspection", 5), "--checkpoints", emptyPoints], 0);
+  assert.deepEqual(optionalEmpty.pairs, inspection.pairs);
+  assert.equal(optionalEmpty.checkpoints.status, "NOT_PROVIDED");
+  assert.deepEqual(optionalEmpty.checkpoints.rows, []);
+  const missingHeader = fixture("missing-checkpoint-header.tsv", "");
+  checkError("invalid checkpoint table still exits 2",
+    [...args("inspection", 5, { strict: true }), "--checkpoints", missingHeader],
+    "BAD_HEADER", "checkpoints");
 
   const tsv = run("strict row index for merging", args("inspection", 5, {
     checkpoints: "checkpoints.tsv", strict: true, format: "pairs-tsv",
@@ -229,6 +242,12 @@ try {
   assert.equal(benchOff.pairs.length, 2);
   assert.deepEqual(benchOff.checkpoints.rows,
     [{ line: 2, code: "RESIDUAL_TOO_HIGH", residual_ms: "3" }]);
+  const benchOverride = jsonReport("explicit checkpoint tolerance overrides the pairing default",
+    [...args("bench", 2, { checkpoints: "checkpoints-off.tsv", strict: true }),
+      "--checkpoint-tolerance-ms", "3"], 0);
+  assert.deepEqual(benchOverride.pairs, benchOff.pairs);
+  assert.deepEqual(benchOverride.checkpoints.rows,
+    [{ line: 2, code: "WITHIN_TOLERANCE", residual_ms: "3" }]);
   checkError("bench reversed anchors", args("bench", 2, {
     anchors: "anchors-reversed.tsv",
   }), "ANCHOR_ORDER", "anchors");

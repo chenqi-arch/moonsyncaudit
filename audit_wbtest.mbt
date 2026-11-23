@@ -95,6 +95,7 @@ test "strict audit requires a measured checkpoint in every interval" {
     rows[:],
     tolerance_ms=0L,
     checkpoints=partial[:],
+    checkpoint_tolerance_ms=1L,
   )
   assert_true(regular.passed())
   let strict = audit(
@@ -187,4 +188,62 @@ test "strict audit reports the worst absolute residual even when all rows pair" 
   assert_eq(report.checks()[0].residual_ms, Some(-6L))
   assert_eq(report.segments()[0].checkpoint_count, 3)
   assert_eq(report.segments()[0].max_abs_residual_ms, Some(6L))
+}
+
+///|
+test "unspecified checkpoint tolerance follows the pairing tolerance" {
+  let clock = ClockModel::new(
+    parse_clock_points("device_ms\treference_ms\n0\t40\n10000\t10040")[:],
+  )
+  let device = parse_records("id\tt_ms\na\t2000\nb\t8000")
+  let reference = parse_records("id\tt_ms\na\t2041\nb\t8040")
+  let points = parse_clock_points("device_ms\treference_ms\n5000\t5043")
+  let report = audit(
+    clock,
+    device[:],
+    reference[:],
+    tolerance_ms=2L,
+    checkpoints=points[:],
+    strict=true,
+  )
+  assert_eq(report.pairs().length(), 2)
+  assert_eq(report.pairs()[0].delta_ms, 1L)
+  assert_eq(report.checks()[0].residual_ms, Some(3L))
+  assert_eq(report.checks()[0].status, ResidualTooHigh)
+  assert_true(!report.passed())
+  let overridden = audit(
+    clock,
+    device[:],
+    reference[:],
+    tolerance_ms=2L,
+    checkpoints=points[:],
+    checkpoint_tolerance_ms=3L,
+    strict=true,
+  )
+  assert_true(overridden.passed())
+}
+
+///|
+test "a header-only checkpoint table is equivalent to omitting checkpoints" {
+  let clock = ClockModel::new(
+    parse_clock_points("device_ms\treference_ms\n0\t40\n10000\t10040")[:],
+  )
+  let device = parse_records("id\tt_ms\na\t2000")
+  let reference = parse_records("id\tt_ms\na\t2041")
+  let points = parse_clock_points("device_ms\treference_ms\n")
+  assert_true(clock.check_points(points[:], tolerance_ms=2L).is_empty())
+  for strict in [false, true] {
+    let absent = audit(clock, device[:], reference[:], tolerance_ms=2L, strict~)
+    let empty = audit(
+      clock,
+      device[:],
+      reference[:],
+      tolerance_ms=2L,
+      checkpoints=points[:],
+      strict~,
+    )
+    assert_eq(empty.to_json().stringify(), absent.to_json().stringify())
+    assert_eq(empty.pairs().length(), 1)
+    assert_eq(empty.passed(), !strict)
+  }
 }

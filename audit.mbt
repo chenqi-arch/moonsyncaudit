@@ -167,16 +167,19 @@ fn finish_issues(
 /// requiring review. Check point failures leave row findings visible and
 /// block the pass verdict. Strict mode also requires a measured independent
 /// checkpoint in every anchor interval.
+/// An omitted checkpoint tolerance uses the pairing tolerance. Omitted and
+/// empty observations both leave the calibration intervals unchecked.
 pub fn audit(
   clock : ClockModel,
   device : ArrayView[Record],
   reference : ArrayView[Record],
   tolerance_ms~ : Int64,
   checkpoints? : ArrayView[ClockPoint],
-  checkpoint_tolerance_ms? : Int64 = 5L,
+  checkpoint_tolerance_ms? : Int64,
   strict? : Bool = false,
 ) -> AuditReport raise InputError {
-  guard tolerance_ms >= 0L && checkpoint_tolerance_ms >= 0L else {
+  let point_tolerance = checkpoint_tolerance_ms.unwrap_or(tolerance_ms)
+  guard tolerance_ms >= 0L && point_tolerance >= 0L else {
     raise InvalidInput(NegativeTolerance, 0)
   }
   guard device.length() > 0 || reference.length() > 0 else {
@@ -184,11 +187,10 @@ pub fn audit(
   }
   validate_records(device)
   validate_records(reference)
-  let evaluation = match checkpoints {
-    Some(points) =>
-      clock.evaluate_points(points, tolerance_ms=checkpoint_tolerance_ms)
-    None => { rows: [], segments: clock.unchecked_segments(), }
-  }
+  let evaluation = clock.evaluate_points(
+    checkpoints.unwrap_or([]),
+    tolerance_ms=point_tolerance,
+  )
   let a = covered_rows(device, Device, t => clock.project(t))
   let b = covered_rows(reference, Reference, t => {
     if clock.covers_reference(t) {

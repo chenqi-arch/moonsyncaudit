@@ -18,7 +18,7 @@ priv struct Options {
   anchors : String
   tolerance_ms : Int64
   checkpoints : String?
-  checkpoint_tolerance_ms : Int64
+  checkpoint_tolerance_ms : Int64?
   format : OutputFormat
   strict : Bool
 }
@@ -72,9 +72,9 @@ fn parse_options(args : FixedArray[String]) -> Options raise CliError {
   let checkpoint_tolerance_ms = match flags.get("--checkpoint-tolerance-ms") {
     Some(raw) => {
       guard checkpoints is Some(_) else { raise UsageError }
-      parse_tolerance(raw, "checkpoint-tolerance-ms")
+      Some(parse_tolerance(raw, "checkpoint-tolerance-ms"))
     }
-    None => tolerance_ms
+    None => None
   }
   let format = match flags.get("--format") {
     None | Some("text") => Text
@@ -148,14 +148,12 @@ fn run(options : Options) -> @sync.AuditReport raise CliError {
     reference[:],
     tolerance_ms=options.tolerance_ms,
     checkpoints?=checkpoint_views,
-    checkpoint_tolerance_ms=options.checkpoint_tolerance_ms,
+    checkpoint_tolerance_ms?=options.checkpoint_tolerance_ms,
     strict=options.strict,
   ) catch {
     error => {
       let label = match error.code() {
-        @sync.CheckpointOrder
-        | @sync.CheckpointsMissing
-        | @sync.CheckpointOnAnchor => "checkpoints"
+        @sync.CheckpointOrder | @sync.CheckpointOnAnchor => "checkpoints"
         _ => "audit"
       }
       raise InputProblem(label, error.code().tag(), error.line())
