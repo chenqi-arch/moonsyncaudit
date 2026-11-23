@@ -5,6 +5,13 @@ priv suberror CliError {
 }
 
 ///|
+priv enum OutputFormat {
+  Text
+  Json
+  PairsTsv
+}
+
+///|
 priv struct Options {
   device : String
   reference : String
@@ -12,7 +19,8 @@ priv struct Options {
   tolerance_ms : Int64
   checkpoints : String?
   checkpoint_tolerance_ms : Int64
-  as_json : Bool
+  format : OutputFormat
+  strict : Bool
 }
 
 ///|
@@ -20,7 +28,9 @@ let usage : String =
   #|MoonSyncAudit checks the pairing of two offline timestamp tables.
   #|Usage:
   #|  moon run --target js cmd/main -- audit DEVICE.tsv REFERENCE.tsv ANCHORS.tsv --tolerance-ms N
-  #|    [--checkpoints POINTS.tsv] [--checkpoint-tolerance-ms N] [--format text|json]
+  #|    [--checkpoints POINTS.tsv] [--checkpoint-tolerance-ms N] [--strict]
+  #|    [--format text|json|pairs-tsv]
+  #|Strict mode requires an independent checkpoint in every anchor interval.
   #|Exit 0: pass. Exit 1: rows or check points need review. Exit 2: invalid input or file error.
 
 ///|
@@ -34,9 +44,16 @@ fn parse_tolerance(raw : String, option : String) -> Int64 raise CliError {
 fn parse_options(args : FixedArray[String]) -> Options raise CliError {
   guard args.length() >= 6 && args[0] == "audit" else { raise UsageError }
   let flags : Map[String, String] = Map([])
+  let mut strict = false
   let mut index = 4
   while index < args.length() {
     let name = args[index]
+    if name == "--strict" {
+      guard !strict else { raise UsageError }
+      strict = true
+      index += 1
+      continue
+    }
     guard index + 1 < args.length() && !flags.contains(name) else {
       raise UsageError
     }
@@ -59,9 +76,10 @@ fn parse_options(args : FixedArray[String]) -> Options raise CliError {
     }
     None => tolerance_ms
   }
-  let as_json = match flags.get("--format") {
-    None | Some("text") => false
-    Some("json") => true
+  let format = match flags.get("--format") {
+    None | Some("text") => Text
+    Some("json") => Json
+    Some("pairs-tsv") => PairsTsv
     _ => raise UsageError
   }
   {
@@ -71,7 +89,8 @@ fn parse_options(args : FixedArray[String]) -> Options raise CliError {
     tolerance_ms,
     checkpoints,
     checkpoint_tolerance_ms,
-    as_json,
+    format,
+    strict,
   }
 }
 
@@ -130,6 +149,7 @@ fn run(options : Options) -> @sync.AuditReport raise CliError {
     tolerance_ms=options.tolerance_ms,
     checkpoints?=checkpoint_views,
     checkpoint_tolerance_ms=options.checkpoint_tolerance_ms,
+    strict=options.strict,
   ) catch {
     error => {
       let label = match error.code() {
@@ -154,10 +174,10 @@ fn main {
     let options = parse_options(args)
     let report = run(options)
     println(
-      if options.as_json {
-        report.to_json().stringify()
-      } else {
-        report.to_text()
+      match options.format {
+        Text => report.to_text()
+        Json => report.to_json().stringify()
+        PairsTsv => report.to_pairs_tsv()
       },
     )
     node_set_exit(if report.passed() { 0 } else { 1 })

@@ -16,7 +16,12 @@ fn main raise {
     tolerance_ms=0L,
     checkpoints=checks[:],
     checkpoint_tolerance_ms=0L,
+    strict=true,
   )
   guard report.passed() else { abort(report.to_text()) }
+  let segment = report.segments()[0]
+  guard segment.checkpoint_count == 1 && segment.max_abs_residual_ms == Some(0L) else {
+    abort("Expected one independent checkpoint with zero residual")
+  }
   println(report.to_text())
 }
