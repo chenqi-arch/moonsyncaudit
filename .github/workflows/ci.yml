@@ -52,5 +52,7 @@ jobs:
           moon check --target js --deny-warn
           moon build --target js --deny-warn
           moon test --target js --deny-warn
-      - name: Run the three CLI acceptance scenarios and failure cases
+      - name: Run CLI scenarios, failure cases and the 20,000-row acceptance fixture
         run: node scripts/verify-cli.mjs
+      - name: Verify publishable package
+        run: moon package --list --frozen
