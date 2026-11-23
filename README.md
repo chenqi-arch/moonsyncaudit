@@ -30,14 +30,33 @@ status=PASS device=3 reference=3 pairs=3 issues=0 checkpoints=PASS strict=true
 | 1 | 有缺项、候选冲突、覆盖区间外的记录或校验点问题。有校验点缺失的区间也会阻止严格模式通过。报告中保留已找到的配对供复核。 |
 | 2 | 参数、表格、校准锚点或文件读取无效。错误输出使用输入类别、错误码和行号。 |
 
-用 PowerShell 的 `$LASTEXITCODE` 查看退出码。普通模式省略校验点时报告 `NOT_PROVIDED`。严格模式省略校验点时标记为 `REVIEW` 并返回 1。
+用 PowerShell 的 `$LASTEXITCODE` 查看退出码。省略校验表和提供只有合法表头的校验表都表示没有独立观测。普通模式报告 `NOT_PROVIDED`，严格模式保留配对、报告 `REVIEW` 并返回 1。校验表缺少表头或字段无效时返回 2。
 
 ## 将配对用于合表
 
 `--format pairs-tsv` 输出三列，分别是设备表行号、参考表行号和带符号的毫秒差。按前两列分别读取原表对应行，就能用这些配对关系合并原有列。行号从 1 开始并包含表头，索引应配合同一次审计读取的文件使用。
 
+下面的 PowerShell 命令在退出码为 0 时写出本批次独有的索引文件，并输出该文件的路径。合表步骤应使用这次返回的路径。
+
 ```powershell
-moon run --target js cmd/main -- audit examples/inspection/device.tsv examples/inspection/reference.tsv examples/inspection/anchors.tsv --tolerance-ms 5 --checkpoints examples/inspection/checkpoints.tsv --strict --format pairs-tsv
+& {
+    $rows = moon run --target js cmd/main -- audit examples/inspection/device.tsv examples/inspection/reference.tsv examples/inspection/anchors.tsv --tolerance-ms 5 --checkpoints examples/inspection/checkpoints.tsv --strict --format pairs-tsv
+    $auditExit = $LASTEXITCODE
+    if ($auditExit -ne 0) {
+        throw "MoonSyncAudit 退出码 $auditExit，本批次未生成合表索引。"
+    }
+    $index = Join-Path (Get-Location).Path ("pairs-" + [Guid]::NewGuid().ToString("N") + ".tsv")
+    $temporary = $index + ".tmp"
+    try {
+        [IO.File]::WriteAllLines($temporary, [string[]]$rows, [Text.UTF8Encoding]::new($false))
+        [IO.File]::Move($temporary, $index)
+    } finally {
+        if ([IO.File]::Exists($temporary)) {
+            [IO.File]::Delete($temporary)
+        }
+    }
+    $index
+}
 ```
 
 ```text
@@ -47,7 +66,7 @@ device_line	reference_line	delta_ms
 4	4	0
 ```
 
-可用 PowerShell 的 `| Set-Content -Encoding utf8 pairs.tsv` 保存索引。自动合表前检查退出码是否为 0。退出 1 时索引中的现有配对供人工复核，同样参数使用 `--format json` 可查看原因。
+退出 1 时，可保留其他参数并改用 `--format json`，查看供人工复核的配对和异常。
 
 文本报告逐段以 `SEGMENT` 标出两条锚点所在行、可核验点数及最大绝对偏差。JSON 的 `checkpoints.segments` 提供对应字段。点数为 0 时 `max_abs_residual_ms` 为 `null`，表示该区间没有测得残差。独立校验使用调用方提供的观测点，结论针对这些取样位置。
 
@@ -62,15 +81,17 @@ device_line	reference_line	delta_ms
 
 ## 在 MoonBit 中使用
 
-在自己的 MoonBit 项目中安装 [Mooncakes 包](https://mooncakes.io/docs/chenqi-arch/moonsyncaudit@0.1.0)。
+在自己的 MoonBit 项目中安装 [Mooncakes 包](https://mooncakes.io/docs/chenqi-arch/moonsyncaudit@0.1.1)。
 
 ```text
-moon add chenqi-arch/moonsyncaudit@0.1.0
+moon add chenqi-arch/moonsyncaudit@0.1.1
 ```
 
 把[示例源码](cmd/library-example/main.mbt)和[包配置](cmd/library-example/moon.pkg)放入调用方的可执行包即可运行。仓库内可直接执行 `moon run --target wasm cmd/library-example`，查看分段校准、独立复核和配对结果。
 
 根包提供 `parse_records`、`parse_clock_points`、`ClockModel::new`、`ClockModel::project` 和 `audit`。调用 `audit` 时可传 `strict=true`。用 `AuditReport::segments` 读取各段覆盖，用 `AuditReport::to_pairs_tsv` 导出合表行号。库输入为已解码的 TSV 文本，可独立于 Node.js 使用。
+
+`audit` 默认沿用配对容差核验独立校验点，与命令行一致。若业务需要单独设定校验容差，可显式传 `checkpoint_tolerance_ms`。从 0.1.0 升级时，需要沿用原来 5 ms 校验门槛的调用者可传 `checkpoint_tolerance_ms=5L`。
 
 JSON 中的时间差和最大绝对偏差使用十进制字符串，保留 64 位整数精度。`delta_ms` 与 `residual_ms` 的符号表示参考时间减去校准后的设备时间。记录 ID 和原始输入行保留在用户的源文件。
 
